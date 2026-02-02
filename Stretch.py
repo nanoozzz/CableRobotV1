@@ -3,7 +3,7 @@ import time
 import sys
 
 ############################################################
-# Control Table (X-Series — XM430, XH540, etc.)
+# Control Table (XL-330)
 ############################################################
 
 ADDR_OPERATING_MODE      = 11
@@ -16,42 +16,42 @@ ADDR_PRESENT_POSITION    = 132
 PROTOCOL_VERSION = 2.0
 DXL_ID = 1
 BAUDRATE = 57600
-DEVICENAME = 'COM14'
+DEVICENAME = 'COM14' # Update as needed
 
 TORQUE_ENABLE  = 1
 TORQUE_DISABLE = 0
 POSITION_MODE  = 3
 
 # Utility Functions
+# Check communication results
 def check_comm(packetHandler, result, error):
-    if result != COMM_SUCCESS:
+    if result != COMM_SUCCESS: # Communication error
         raise Exception(packetHandler.getTxRxResult(result))
-    elif error != 0:
+    elif error != 0: # Dynamixel error
         raise Exception(packetHandler.getRxPacketError(error))
 
-
+# Wait until motor reaches goal position
 def wait_until_arrived(portHandler, packetHandler, goal, timeout=10):
     """
     Wait until the motor reaches the goal position.
     Includes timeout to prevent infinite loop.
     """
 
-    start = time.time()
+    start = time.time() 
     threshold = 5   # 1 tick = 0.088 deg 
 
     while True:
-
         present, result, error = packetHandler.read4ByteTxRx(
-            portHandler, DXL_ID, ADDR_PRESENT_POSITION)
+            portHandler, DXL_ID, ADDR_PRESENT_POSITION) # Current position
 
         check_comm(packetHandler, result, error)
 
         print(f"Present: {present} | Goal: {goal}")
 
-        if abs(goal - present) < threshold:
+        if abs(goal - present) < threshold: # Prevent infinite loop
             break
 
-        if time.time() - start > timeout:
+        if time.time() - start > timeout: # Timeout
             raise Exception("Motor motion timeout")
 
         time.sleep(0.05)
@@ -59,8 +59,8 @@ def wait_until_arrived(portHandler, packetHandler, goal, timeout=10):
 # Setup
 def setup_motor():
 
-    portHandler = PortHandler(DEVICENAME)
-    packetHandler = PacketHandler(PROTOCOL_VERSION)
+    portHandler = PortHandler(DEVICENAME) # Open port
+    packetHandler = PacketHandler(PROTOCOL_VERSION) # Create packet handler
 
     if not portHandler.openPort():
         raise Exception("Failed to open port")
@@ -128,11 +128,11 @@ def shutdown(portHandler, packetHandler):
 def main():
     portHandler = None
     try:
-
+        
         portHandler, packetHandler, zero = setup_motor()
         # Choose target offset
         offset = 342   # 0-4095 is 1 rev, 1 ~ 0.229 rpm
-        goal = zero + offset
+        goal = max(0, min(4095, zero + offset)) # ~30 degrees
 
         print("\nMoving to target...")
         packetHandler.write4ByteTxRx(
@@ -148,10 +148,11 @@ def main():
 
         wait_until_arrived(portHandler, packetHandler, zero)
 
-        print("\nMotion complete.")
+        print("\nStretch completed.")
 
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
+        pass
 
     except Exception as e:
         print("\nERROR:", e)
