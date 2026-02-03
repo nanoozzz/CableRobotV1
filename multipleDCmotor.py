@@ -5,17 +5,23 @@ import csv
 
 # Robot constants 
 b = 66.464e-3
-L = 220.0e-3
-W = 120.0e-3
+L = 300.0e-3
+W = 200.0e-3
+
+ACCELERATION = 0.25  # m/s^2
 
 CONTROL_RATE = 100  # Hz
 dt = 1.0 / CONTROL_RATE  # Time step
+
+#K = 100/(117*(2*np.pi)/60*0.015)  # Cable speed constant (rad/s per V)
+K = 100.0/0.4
+BREAKAWAY_CMD = np.array([50, 50, 50, 50])  # Minimum command to overcome motor deadzone
 
 # Starting position
 x = 100.0e-3
 y = 150.0e-3
 
-PORT = "COM10" # Update as needed
+PORT = "COM9" # Update as needed
 BAUD = 115200
 
 ser = serial.Serial(PORT, BAUD, timeout=1)
@@ -88,7 +94,7 @@ def evaluate_velocity(c, t):
     return (c[1] + 2*c[2]*t + 3*c[3]*t**2 + 4*c[4]*t**3 + 5*c[5]*t**4)
 
 # Execute trajectory from (xi, yi) to (xf, yf) with max acceleration a
-def execute_trajectory(xi, yi, xf, yf, a = 5):
+def execute_trajectory(xi, yi, xf, yf, a = ACCELERATION):
     dx = xf - xi
     dy = yf - yi
     tf = max(np.sqrt(2*abs(dx)/a),
@@ -118,9 +124,16 @@ def execute_trajectory(xi, yi, xf, yf, a = 5):
             J = jacobian(x, y, b, W, L)
 
             cable_velocities = J @ ee_vel  # Matrix multiplication
-            cable_velocities = scale_to_limits(cable_velocities, limit=100)
 
-            send_velocities(cable_velocities)
+            motor_cmd = cable_velocities * K
+            motor_cmd = compensate_deadband(motor_cmd, breakaway=BREAKAWAY_CMD)
+
+            motor_cmd = scale_to_limits(motor_cmd, limit=100)
+            
+            PRINT_EVERY = 10  # Print every N iterations
+            if int(t / dt) % PRINT_EVERY == 0:
+                print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Cmd={motor_cmd}")  # Debug only
+            send_velocities(motor_cmd)
 
             # Maintain control rate
             sleep_duration = next_time - time.time()
@@ -141,7 +154,7 @@ def execute_trajectory(xi, yi, xf, yf, a = 5):
 # Send velocities to Arduino as a list, later would be changed to depend on Jacobian
 def send_velocities(velocities):
     """
-    velocities is list like [50, -30, 80]
+    velocities is list like [v1, v2, v3, v4]
     """
 
     velocities = [clamp(v) for v in velocities]
@@ -165,6 +178,31 @@ def scale_to_limits(v, limit=100):
         v = (v / max_mag) * limit
 
     return v
+
+def compensate_deadband(cmd, breakaway=BREAKAWAY_CMD):
+    """
+    Smoothly remap motor command so anything nonzero
+    exceeds the breakaway threshold.
+
+    Keeps control continuous (no jumps).
+    """
+
+    cmd = np.array(cmd, dtype=float)
+
+    for i in range(len(cmd)):
+
+        if cmd[i] == 0:
+            continue
+
+        sign = np.sign(cmd[i])
+        mag = abs(cmd[i])
+
+        # Remap 0–100 → breakaway–100
+        mag = breakaway[i] + (100 - breakaway[i]) * (mag / 100)
+
+        cmd[i] = sign * mag
+
+    return cmd
 
 # Load points from CSV file
 def load_points(csv_file):
@@ -199,17 +237,17 @@ def run_trajectory(csv_file):
 
     try:
         for i in range(len(points)-1):
-            xi, xf = points[i]
+            xi, yi = points[i]
             xf, yf = points[i+1]
 
-            execute_trajectory(xi, xf, xf, yf, a=5)
+            execute_trajectory(xi, yi, xf, yf, a = ACCELERATION)
 
             print("Waiting 10 seconds on user's response...\n")
             time.sleep(10)
         
         last_point = points[-1]
         print("Returning to initial point...")
-        execute_trajectory(last_point[0], last_point[1], initial_point[0], initial_point[1], a=5)
+        execute_trajectory(last_point[0], last_point[1], initial_point[0], initial_point[1], a = ACCELERATION)
         print("All trajectories completed.")
 
     except Exception as e:
