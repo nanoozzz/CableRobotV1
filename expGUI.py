@@ -1,7 +1,8 @@
 import tkinter as tk
 import csv
 from datetime import datetime
-
+import runTrial
+import robot
 # -------------------------
 # Parameters
 # -------------------------
@@ -10,6 +11,7 @@ RECT_H = 440
 BAR_W = 40
 BAR_H = 440
 TOTAL_TRIALS = 3
+CSV_POINTS_FILE = "points.csv"
 
 # -------------------------
 # Experiment state
@@ -19,6 +21,7 @@ perceived_x = None
 perceived_y = None
 intensity = None
 wait = False
+points = robot.load_points(CSV_POINTS_FILE)
 
 # -------------------------
 # CSV setup
@@ -68,7 +71,7 @@ def on_click(event):
     x, y = event.x, event.y
 
     if wait is False:
-        print("Please Wait.")
+        print("Please wait for stretch to complete.")
         return
     
     # Workspace click
@@ -83,6 +86,39 @@ def on_click(event):
     elif bar_x0 <= x <= bar_x1 and bar_y0 <= y <= bar_y1:
         canvas.coords(bar_fill, bar_x0, y, bar_x1, bar_y1)
         intensity = 1 - (y - bar_y0) / BAR_H
+
+# Next trial logic
+def start_trial():
+    """
+    Starts the robot movement and stretch for the current trial.
+    Called automatically at the start and after each trial.
+    """
+    global wait, trial
+    """
+    if trial > len(points)-1:
+        print("All trials completed.")
+        csv_file.close()
+        root.destroy()
+        return"""
+
+    wait = False
+    next_button.config(state="disabled")  # disable until stretch finishes
+
+    xi, yi = points[trial-1]
+    xf, yf = points[trial]
+
+    def run_and_enable():
+        success = runTrial.run_trial(xi, yi, xf, yf)
+        if success:
+            print("Stretch complete. You may now click the workspace.")
+        else:
+            print("Trial failed.")
+        global wait
+        wait = True
+        next_button.config(state="normal")
+
+    # Use Tkinter after() to avoid freezing GUI
+    root.after(100, run_and_enable)
 
 # Next trial logic
 def next_trial():
@@ -106,20 +142,36 @@ def next_trial():
     perceived_x = perceived_y = intensity = None
     wait = False
     trial += 1
+    trial_label.config(text=f"Trial {trial}/{TOTAL_TRIALS}")
 
+    """
     if trial > TOTAL_TRIALS:
         csv_file.close()
         root.destroy()
         print("Experiment finished.")
-        return
+        return """
 
-    trial_label.config(text=f"Trial {trial}/{TOTAL_TRIALS}")
+    if trial > len(points)-1:
+        print("All trials done. Returning to initial position...")
+        xi, yi = points[-1]
+        xf, yf = points[0]  # Return to initial point
+        runTrial.run_trial(xi, yi, xf, yf, stretch=False)  # NO stretch applied
+        print("Robot returned home. Experiment finished.")
+        csv_file.close()
+        root.destroy()
+    else:
+        # Start next robot trial
+        start_trial()
 
 # Buttons and bindings
 canvas.bind("<Button-1>", on_click)
 
-next_button = tk.Button(root, text="Next Trial", command=next_trial)
+next_button = tk.Button(root, text="Next Trial", command=next_trial, state="disabled")
 next_button.pack(pady=10)
 
-def gui_main():
+def main():
+    start_trial()  # Start the first trial automatically
     root.mainloop()
+
+if __name__ == "__main__":
+    main()
