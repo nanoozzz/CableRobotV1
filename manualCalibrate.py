@@ -1,8 +1,11 @@
 import serial
 import time
+import numpy as np
 
 PORT = "COM10" # Update as needed
 BAUD = 115200
+
+BREAKAWAY_CMD = np.array([50, 50, 50, 50])
 
 ser = serial.Serial(PORT, BAUD, timeout=1)
 
@@ -26,6 +29,7 @@ def send_velocities(velocities):
 
     velocities = [clamp(v) for v in velocities]
 
+
     # Create command string
     command = "D," + ",".join(map(str, velocities)) + "\n"
 
@@ -37,6 +41,31 @@ def send_velocities(velocities):
         ack = ser.readline().decode(errors='ignore').strip() # Read line and decode
         if ack:
             print("Arduino:", ack)
+
+def compensate_deadband(cmd, breakaway=BREAKAWAY_CMD):
+    """
+    Smoothly remap motor command so anything nonzero
+    exceeds the breakaway threshold.
+
+    Keeps control continuous (no jumps).
+    """
+
+    cmd = np.array(cmd, dtype=float)
+
+    for i in range(len(cmd)):
+
+        if cmd[i] == 0:
+            continue
+
+        sign = np.sign(cmd[i])
+        mag = abs(cmd[i])
+
+        # Remap 0–100 → breakaway–100
+        mag = breakaway[i] + (100 - breakaway[i]) * (mag / 100)
+
+        cmd[i] = sign * mag
+
+    return cmd
 
 def main():
     try:
@@ -51,7 +80,11 @@ def main():
 
             try:
                 velocities = user_input.split()
-                send_velocities(velocities)
+                print("Raw velocities:", velocities)
+                motor_cmd = compensate_deadband(velocities, breakaway=BREAKAWAY_CMD)
+                print("Compensated motor commands:", motor_cmd)
+
+                send_velocities(motor_cmd)
             except Exception as e:
                 print("Invalid input:", e)
 
