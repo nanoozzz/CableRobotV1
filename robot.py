@@ -22,7 +22,7 @@ BREAKAWAY_CMD = np.array([50, 50, 50, 50])  # Minimum command to overcome motor 
 x = 100.0e-3
 y = 150.0e-3
 
-PORT = "COM9" # Update as needed
+PORT = "COM10" # Update as needed
 BAUD = 115200
 
 time.sleep(2)  # Allow Arduino reset
@@ -127,6 +127,7 @@ def execute_trajectory(xi, yi, xf, yf, a = ACCELERATION):
             PRINT_EVERY = 10  # Print every N iterations
             if int(t / dt) % PRINT_EVERY == 0:
                 print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Cmd={motor_cmd}")  # Debug only
+            
             send_velocities(motor_cmd)
 
             # Maintain control rate
@@ -257,10 +258,11 @@ def run_robot(csv_file):
         run_trajectory(csv_file)
 
     finally:
-        send_velocities([0,0,0,0])
-        time.sleep(0.2)
-        ser.close()
-        print("Serial closed.")
+        #send_velocities([0,0,0,0])
+        #time.sleep(0.2)
+        #ser.close()
+        #print("Serial closed.")
+        close_serial()
 
 # Initialize serial communication
 def init_serial():
@@ -277,6 +279,31 @@ def init_serial():
     
     print("Communication established successfully.\n")
     return ser
+
+# Close serial communication safely
+def close_serial():
+    """
+    Safely stop all motors and close the serial connection.
+    """
+    global ser
+
+    if ser is not None:
+        print("Stopping all motors and closing serial...")
+
+        try:
+            # Stop motors
+            send_velocities([0, 0, 0, 0])
+            time.sleep(0.2)  # Ensure command is sent
+
+            # Close serial
+            ser.close()
+            print("Serial port closed safely.")
+
+        except Exception as e:
+            print("Error closing serial:", e)
+
+        finally:
+            ser = None  # Reset so it can be reinitialized later
 
 # Main function
 def main():
