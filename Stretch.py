@@ -125,13 +125,13 @@ def shutdown(portHandler, packetHandler):
 
     print("Torque disabled. Port closed.")
 
-def main():
+def run_stretch(offset):
     portHandler = None
     try:
         
         portHandler, packetHandler, zero = setup_motor()
         # Choose target offset
-        offset = 342   # 0-4095 is 1 rev, 1 ~ 0.229 rpm
+        #offset = 342   # 0-4095 is 1 rev, 1 ~ 0.229 rpm
         goal = max(0, min(4095, zero + offset)) # ~30 degrees
 
         print("\nMoving to target...")
@@ -160,6 +160,9 @@ def main():
     finally:
         if portHandler:
             shutdown(portHandler, packetHandler)
+
+def main():
+    run_stretch()
 
 if __name__ == "__main__":
     main()
