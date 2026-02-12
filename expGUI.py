@@ -1,8 +1,8 @@
 import tkinter as tk
 import csv
 from datetime import datetime
-import runTrial
-import robot
+import run_trial
+import read_data
 # -------------------------
 # Parameters
 # -------------------------
@@ -10,8 +10,10 @@ RECT_W = 240
 RECT_H = 440
 BAR_W = 40
 BAR_H = 440
-TOTAL_TRIALS = 3
-CSV_POINTS_FILE = "points.csv"
+
+CSV_POINTS_FILE = "exp0.csv" # Change to exp1.csv, exp2.csv, or exp3.csv as needed
+points = read_data.load_points(CSV_POINTS_FILE)
+TOTAL_TRIALS = len(points) - 1
 
 # -------------------------
 # Experiment state
@@ -19,9 +21,8 @@ CSV_POINTS_FILE = "points.csv"
 trial = 1
 perceived_x = None
 perceived_y = None
-intensity = None
+perceived_intensity = None
 wait = False
-points = robot.load_points(CSV_POINTS_FILE)
 
 # -------------------------
 # CSV setup
@@ -29,11 +30,7 @@ points = robot.load_points(CSV_POINTS_FILE)
 filename = f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 csv_file = open(filename, mode="w", newline="")
 csv_writer = csv.writer(csv_file)
-csv_writer.writerow([
-    "trial",
-    "perceived_x", "perceived_y",
-    "intensity"
-])
+csv_writer.writerow(["trial", "perceived_x", "perceived_y", "intensity"])
 
 # GUI setup
 root = tk.Tk()
@@ -64,9 +61,42 @@ canvas.create_text(bar_x0 + BAR_W / 2, bar_y0 - 12, text="Intensity")
 
 bar_fill = canvas.create_rectangle(bar_x0, bar_y1, bar_x1, bar_y1, fill="blue")
 
+NUM_LEVELS = 6   # gives values 0–5
+
+# height of each level
+level_height = BAR_H / NUM_LEVELS
+
+for i in range(1, NUM_LEVELS):
+    y_line = bar_y0 + i * level_height
+    canvas.create_line(
+        bar_x0, 
+        y_line, 
+        bar_x1, 
+        y_line, 
+        fill="gray70", 
+        width=1, 
+        tags="level_lines"
+    )
+
+canvas.tag_raise(bar_fill)
+canvas.tag_raise("level_lines")
+
+
+for i in range(NUM_LEVELS):
+
+    # Position text in the CENTER of each level
+    y_center = bar_y1 - (i + 0.5) * level_height
+
+    canvas.create_text(
+        bar_x1 + 15,        # slightly to the right of the bar
+        y_center,
+        text=str(i),
+        font=("Arial", 10)
+    )
+
 # Click handler
 def on_click(event):
-    global perceived_x, perceived_y, intensity
+    global perceived_x, perceived_y, perceived_intensity
 
     x, y = event.x, event.y
 
@@ -84,8 +114,25 @@ def on_click(event):
 
     # Intensity bar click
     elif bar_x0 <= x <= bar_x1 and bar_y0 <= y <= bar_y1:
-        canvas.coords(bar_fill, bar_x0, y, bar_x1, bar_y1)
-        intensity = 1 - (y - bar_y0) / BAR_H
+        #canvas.coords(bar_fill, bar_x0, y, bar_x1, bar_y1)
+        #perceived_intensity = 1 - (y - bar_y0) / BAR_H
+
+        # distance from TOP of bar
+        relative_y = y - bar_y0
+
+        # compute level index
+        level = int(relative_y // level_height)
+
+        # clamp (safety)
+        level = max(0, min(level, NUM_LEVELS-1))
+
+        # invert so TOP = 5, BOTTOM = 0
+        perceived_intensity = (NUM_LEVELS-1) - level
+
+        # snap fill to the level boundary
+        snapped_y = bar_y0 + level * level_height
+
+        canvas.coords(bar_fill, bar_x0, snapped_y, bar_x1, bar_y1)
 
 # Next trial logic
 def start_trial():
@@ -94,21 +141,15 @@ def start_trial():
     Called automatically at the start and after each trial.
     """
     global wait, trial
-    """
-    if trial > len(points)-1:
-        print("All trials completed.")
-        csv_file.close()
-        root.destroy()
-        return"""
 
     wait = False
     next_button.config(state="disabled")  # disable until stretch finishes
 
-    xi, yi = points[trial-1]
-    xf, yf = points[trial]
+    xi, yi, _ = points[trial-1]
+    xf, yf, intensity = points[trial]
 
     def run_and_enable():
-        success = runTrial.run_trial(xi, yi, xf, yf)
+        success = run_trial.run_trial(xi, yi, xf, yf, intensity)
         if success:
             print("Stretch complete. You may now click the workspace.")
         else:
@@ -122,40 +163,30 @@ def start_trial():
 
 # Next trial logic
 def next_trial():
-    global trial, perceived_x, perceived_y, intensity, wait
+    global trial, perceived_x, perceived_y, perceived_intensity, wait
 
-    if perceived_x is None or perceived_y is None or intensity is None:
+    if perceived_x is None or perceived_y is None or perceived_intensity is None:
         print("Please provide both position and intensity before continuing.")
         return
 
     # Log data
-    csv_writer.writerow([
-        trial,
-        perceived_x, perceived_y,
-        intensity
-    ])
+    csv_writer.writerow([trial, perceived_x, perceived_y, perceived_intensity])
+    csv_file.flush()  # Ensure data is written immediately
 
     # Reset markers
     canvas.coords(rect_marker, 0, 0, 0, 0)
     canvas.coords(bar_fill, bar_x0, bar_y1, bar_x1, bar_y1)
 
-    perceived_x = perceived_y = intensity = None
+    perceived_x = perceived_y = perceived_intensity = None
     wait = False
     trial += 1
     trial_label.config(text=f"Trial {trial}/{TOTAL_TRIALS}")
 
-    """
-    if trial > TOTAL_TRIALS:
-        csv_file.close()
-        root.destroy()
-        print("Experiment finished.")
-        return """
-
     if trial > len(points)-1:
         print("All trials done. Returning to initial position...")
-        xi, yi = points[-1]
-        xf, yf = points[0]  # Return to initial point
-        runTrial.run_trial(xi, yi, xf, yf, stretch=False)  # NO stretch applied
+        xi, yi, _ = points[-1]
+        xf, yf, _ = points[0]  # Return to initial point
+        run_trial.run_trial(xi, yi, xf, yf, 0, stretch=False)  # NO stretch applied
         print("Robot returned home. Experiment finished.")
         csv_file.close()
         root.destroy()
