@@ -1,6 +1,6 @@
 from dynamixel_sdk import *
 import time
-import sys
+import read_data
 
 ############################################################
 # Control Table (XL-330)
@@ -38,7 +38,7 @@ def wait_until_arrived(portHandler, packetHandler, goal, timeout=10):
     """
 
     start = time.time() 
-    threshold = 5   # 1 tick = 0.088 deg 
+    threshold = 10   # 1 tick = 0.088 deg 
 
     while True:
         present, result, error = packetHandler.read4ByteTxRx(
@@ -127,12 +127,26 @@ def shutdown(portHandler, packetHandler):
 
 def run_stretch(offset):
     portHandler = None
-    try:
-        
+  
+    try:      
         portHandler, packetHandler, zero = setup_motor()
         # Choose target offset
         #offset = 342   # 0-4095 is 1 rev, 1 ~ 0.229 rpm
-        goal = max(0, min(4095, zero + offset)) # ~30 degrees
+        if offset == 0:
+            target = 0
+        elif offset == 1:
+            target = 250 # 22 degrees
+        elif offset == 2:
+            target = 296 # 26 degrees
+        elif offset == 3:
+            target = 342 # 30 degrees
+        elif offset == 4:
+            target = 387 # 34 degrees
+        elif offset == 5:
+            target = 432 # 38 degrees
+        else:
+            raise Exception("Invalid intensity level")
+        goal = max(0, min(4095, zero + target)) 
 
         print("\nMoving to target...")
         packetHandler.write4ByteTxRx(
@@ -162,7 +176,8 @@ def run_stretch(offset):
             shutdown(portHandler, packetHandler)
 
 def main():
-    run_stretch()
+    _, _, intensity = read_data.load_points(csv_file="points.csv")[0] # Get intensity from first point
+    run_stretch(intensity)
 
 if __name__ == "__main__":
     main()
