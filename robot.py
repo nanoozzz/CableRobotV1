@@ -1,22 +1,21 @@
 import serial
 import time
 import numpy as np
-import csv
+import read_data
 
 # Robot constants 
 b = 66.464e-3
 L = 300.0e-3
 W = 200.0e-3
 
-ACCELERATION = 0.25  # m/s^2
+ACCELERATION = 0.8  # m/s^2
 
 CONTROL_RATE = 100  # Hz
 dt = 1.0 / CONTROL_RATE  # Time step
-ser = None
-
-#K = 100/(117*(2*np.pi)/60*0.015)  # Cable speed constant (rad/s per V)
-K = 100.0/0.4
+RPM_TO_TICKS_PER_REV = 48*74.83/60
 BREAKAWAY_CMD = np.array([50, 50, 50, 50])  # Minimum command to overcome motor deadzone
+
+ser = None # Global serial object, initialized in init_serial() and closed in close_serial()
 
 # Starting position
 x = 100.0e-3
@@ -27,9 +26,64 @@ BAUD = 115200
 
 time.sleep(2)  # Allow Arduino reset
 
-# Clamp function to limit velocities between -100 and 100
-def clamp(v):
-    return max(min(int(v), 100), -100)
+# Initialize serial communication
+def init_serial():
+    global ser
+
+    if ser is not None:
+        return ser
+    
+    ser = serial.Serial(PORT, BAUD, timeout=1)
+    time.sleep(2)
+
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    
+    print("Communication established successfully.\n")
+    return ser
+
+# Close serial communication safely
+def close_serial():
+    """
+    Safely stop all motors and close the serial connection.
+    """
+    global ser
+
+    if ser is not None:
+        print("Stopping all motors and closing serial...")
+
+        try:
+            # Stop motors
+            send_velocities([0, 0, 0, 0])
+            time.sleep(0.2)  # Ensure command is sent
+
+            # Close serial
+            ser.close()
+            print("Serial port closed safely.")
+
+        except Exception as e:
+            print("Error closing serial:", e)
+
+        finally:
+            ser = None  # Reset so it can be reinitialized later
+
+# Send velocities to Arduino as a list, later would be changed to depend on Jacobian
+def send_velocities(velocities):
+    """
+    velocities is list like [v1, v2, v3, v4]
+    """
+
+    # Create command string
+    command = "D," + ",".join(map(str, velocities)) + "\n"
+
+    # Send command over serial, encoded as bytes
+    ser.write(command.encode())
+
+    # Acknowledgement from Arduino
+    if ser.in_waiting: # If there's data to read
+        ack = ser.readline().decode(errors='ignore').strip() # Read line and decode
+        if ack:
+            print("Arduino:", ack)
 
 # Compute Jacobian matrix
 def jacobian(x,y,b,W,L):
@@ -119,16 +173,22 @@ def execute_trajectory(xi, yi, xf, yf, a = ACCELERATION):
 
             cable_velocities = J @ ee_vel  # Matrix multiplication
 
-            motor_cmd = cable_velocities * K
-            motor_cmd = compensate_deadband(motor_cmd, breakaway=BREAKAWAY_CMD)
+            # Testing only, overwrite cable_velocities
+            #cable_velocities = np.array([0.1, 0, 0, 0])
+            #motor_angular_velocities = cable_velocities / (0.015)  # (rad/s)
+            #motor_angular_velocities_RPM = motor_angular_velocities * (60/(2*np.pi))  # Convert to RPM
+            #target_motor_velocities = motor_angular_velocities_RPM *K  # Convert to ticks/ms
+            ###
 
-            motor_cmd = scale_to_limits(motor_cmd, limit=100)
+            motor_angular_velocities = cable_velocities / (0.015)  # (rad/s)
+            motor_angular_velocities_RPM = motor_angular_velocities * (60/(2*np.pi))  # Convert to RPM
+            target_motor_velocities = motor_angular_velocities_RPM *RPM_TO_TICKS_PER_REV  # Convert to ticks/s
             
-            PRINT_EVERY = 10  # Print every N iterations
+            PRINT_EVERY = 2  # Print every N iterations, debug only
             if int(t / dt) % PRINT_EVERY == 0:
-                print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Cmd={motor_cmd}")  # Debug only
+                print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Commands={target_motor_velocities}")  # Debug only
             
-            send_velocities(motor_cmd)
+            send_velocities(target_motor_velocities)
 
             # Maintain control rate
             sleep_duration = next_time - time.time()
@@ -146,94 +206,20 @@ def execute_trajectory(xi, yi, xf, yf, a = ACCELERATION):
         send_velocities([0, 0, 0, 0])   # Arduino can interpret missing motors as 0
         time.sleep(0.2)
     
-# Send velocities to Arduino as a list, later would be changed to depend on Jacobian
-def send_velocities(velocities):
-    """
-    velocities is list like [v1, v2, v3, v4]
-    """
-
-    velocities = [clamp(v) for v in velocities]
-
-    # Create command string
-    command = "D," + ",".join(map(str, velocities)) + "\n"
-
-    # Send command over serial, encoded as bytes
-    ser.write(command.encode())
-
-    # Acknowledgement from Arduino
-    if ser.in_waiting: # If there's data to read
-        ack = ser.readline().decode(errors='ignore').strip() # Read line and decode
-        if ack:
-            print("Arduino:", ack)
-
-# Scale vector to limits
-def scale_to_limits(v, limit=100): 
-    max_mag = np.max(np.abs(v))
-    if max_mag > limit:
-        v = (v / max_mag) * limit
-
-    return v
-
-def compensate_deadband(cmd, breakaway=BREAKAWAY_CMD):
-    """
-    Smoothly remap motor command so anything nonzero
-    exceeds the breakaway threshold.
-
-    Keeps control continuous (no jumps).
-    """
-
-    cmd = np.array(cmd, dtype=float)
-
-    for i in range(len(cmd)):
-
-        if cmd[i] == 0:
-            continue
-
-        sign = np.sign(cmd[i])
-        mag = abs(cmd[i])
-
-        # Remap 0–100 → breakaway–100
-        mag = breakaway[i] + (100 - breakaway[i]) * (mag / 100)
-
-        cmd[i] = sign * mag
-
-    return cmd
-
-# Load points from CSV file
-def load_points(csv_file):
-    points = []
-
-    with open(csv_file, newline='') as f:
-        reader = csv.reader(f)
-
-        for row in reader:
-            try:
-                x = float(row[0])
-                y = float(row[1])
-                points.append((x, y))
-            
-            except:
-                continue # Skip invalid rows
-    
-    if len(points) < 2:
-        raise ValueError("At least two valid points are required in the CSV file.")
-    
-    return points
-
 # Run trajectory through points loaded from CSV file
 def run_trajectory(csv_file):
-    points = load_points(csv_file)
+    points = read_data(csv_file)
 
     print("Loaded points:") # Debug only
     for p in points:
-        print(f"({p[0]:.2f}, {p[1]:.2f})") # Debug only
+        print(f"({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f})") # Debug only
     
     initial_point = points[0]
 
     try:
         for i in range(len(points)-1):
-            xi, yi = points[i]
-            xf, yf = points[i+1]
+            xi, yi, intensity = points[i]
+            xf, yf, _ = points[i+1]
 
             execute_trajectory(xi, yi, xf, yf, a = ACCELERATION)
 
@@ -253,57 +239,14 @@ def run_trajectory(csv_file):
 
 # Run robot with given CSV file
 def run_robot(csv_file):
+    global ser
+
     ser = init_serial()
     try:
         run_trajectory(csv_file)
 
     finally:
-        #send_velocities([0,0,0,0])
-        #time.sleep(0.2)
-        #ser.close()
-        #print("Serial closed.")
         close_serial()
-
-# Initialize serial communication
-def init_serial():
-    global ser
-
-    if ser is not None:
-        return ser
-    
-    ser = serial.Serial(PORT, BAUD, timeout=1)
-    time.sleep(2)
-
-    ser.reset_input_buffer()
-    ser.reset_output_buffer()
-    
-    print("Communication established successfully.\n")
-    return ser
-
-# Close serial communication safely
-def close_serial():
-    """
-    Safely stop all motors and close the serial connection.
-    """
-    global ser
-
-    if ser is not None:
-        print("Stopping all motors and closing serial...")
-
-        try:
-            # Stop motors
-            send_velocities([0, 0, 0, 0])
-            time.sleep(0.2)  # Ensure command is sent
-
-            # Close serial
-            ser.close()
-            print("Serial port closed safely.")
-
-        except Exception as e:
-            print("Error closing serial:", e)
-
-        finally:
-            ser = None  # Reset so it can be reinitialized later
 
 # Main function
 def main():
