@@ -21,7 +21,7 @@ ser = None # Global serial object, initialized in init_serial() and closed in cl
 x = 100.0e-3
 y = 150.0e-3
 
-PORT = "COM10" # Update as needed
+PORT = "COM9" # Update as needed
 BAUD = 115200
 
 time.sleep(2)  # Allow Arduino reset
@@ -182,11 +182,11 @@ def execute_trajectory(xi, yi, xf, yf, a = ACCELERATION):
 
             motor_angular_velocities = cable_velocities / (0.015)  # (rad/s)
             motor_angular_velocities_RPM = motor_angular_velocities * (60/(2*np.pi))  # Convert to RPM
-            target_motor_velocities = motor_angular_velocities_RPM *RPM_TO_TICKS_PER_REV  # Convert to ticks/s
+            target_motor_velocities = motor_angular_velocities_RPM   
             
-            PRINT_EVERY = 2  # Print every N iterations, debug only
-            if int(t / dt) % PRINT_EVERY == 0:
-                print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Commands={target_motor_velocities}")  # Debug only
+            #PRINT_EVERY = 2  # Print every N iterations, debug only
+            #if int(t / dt) % PRINT_EVERY == 0:
+            #    print(f"t={t:.2f}s | Cable Velocities={cable_velocities} | Motor Commands={target_motor_velocities}")  # Debug only
             
             send_velocities(target_motor_velocities)
 
