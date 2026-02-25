@@ -36,6 +36,10 @@ canvas.pack(padx=10, pady=10)
 trial_label = tk.Label(root, font=("Arial", 12))
 trial_label.pack()
 
+# Start button  
+start_button = tk.Button(root, text="Start", font=("Arial", 12))
+start_button.pack(pady=5)
+
 # Rectangle workspace
 rect_x0, rect_y0 = 20, 40
 rect_x1, rect_y1 = rect_x0 + RECT_W, rect_y0 + RECT_H
@@ -78,6 +82,11 @@ for i in range(NUM_LEVELS):
 # --------------------------
 # Helper functions
 # --------------------------
+def start_demo():
+    start_button.config(state="disabled")  # prevent double click
+    run_demo_trial()
+start_button.config(command=start_demo)
+
 def workspace_to_canvas(x, y):
     """
     Convert normalized robot coords (0-1)
@@ -200,7 +209,6 @@ def next_trial():
     run_demo_trial()
 
 def main():
-    run_demo_trial()
     root.mainloop()
 
 if __name__ == "__main__":
