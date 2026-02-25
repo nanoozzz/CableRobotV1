@@ -6,12 +6,12 @@ import read_data
 # -------------------------
 # Parameters
 # -------------------------
-RECT_W = 240
-RECT_H = 440
+RECT_W = 200
+RECT_H = 300
 BAR_W = 40
-BAR_H = 440
+BAR_H = 300
 
-CSV_POINTS_FILE = "exp0.csv" # Change to exp1.csv, exp2.csv, or exp3.csv as needed
+CSV_POINTS_FILE = "demo.csv" # Change to exp1.csv, exp2.csv, or exp3.csv as needed
 points = read_data.load_points(CSV_POINTS_FILE)
 TOTAL_TRIALS = len(points) - 1
 
@@ -36,12 +36,16 @@ csv_writer.writerow(["trial", "perceived_x", "perceived_y", "intensity"])
 root = tk.Tk()
 root.title("Cable Robot Perception Study")
 
-canvas = tk.Canvas(root, width=400, height=600)
+canvas = tk.Canvas(root, width=400, height=400)
 canvas.pack(padx=10, pady=10)
 
 # Trial label
 trial_label = tk.Label(root, text=f"Trial {trial}/{TOTAL_TRIALS}", font=("Arial", 12))
 trial_label.pack()
+
+# Start button
+start_button = tk.Button(root, text="Start", font=("Arial", 12))
+start_button.pack(pady=5)
 
 # Rectangle workspace
 rect_x0, rect_y0 = 20, 40
@@ -50,6 +54,10 @@ canvas.create_rectangle(rect_x0, rect_y0, rect_x1, rect_y1, outline="black", wid
 canvas.create_text((rect_x0 + rect_x1) / 2, rect_y0 - 12, text="Position")
 
 rect_marker = canvas.create_oval(0, 0, 0, 0, fill="red")
+
+rect_x2, rect_y2 = 70, 90
+rect_x3, rect_y3 = rect_x2 + 100, rect_y2 + 200
+canvas.create_rectangle(rect_x2, rect_y2, rect_x3, rect_y3, outline="green", width=2)
 
 # Intensity bar
 bar_x0 = rect_x1 + 40
@@ -93,6 +101,12 @@ for i in range(NUM_LEVELS):
         text=str(i),
         font=("Arial", 10)
     )
+
+def start_experiment():
+    start_button.config(state="disabled")  # prevent double start
+    start_trial()
+
+start_button.config(command=start_experiment)
 
 # Click handler
 def on_click(event):
@@ -201,7 +215,7 @@ next_button = tk.Button(root, text="Next Trial", command=next_trial, state="disa
 next_button.pack(pady=10)
 
 def main():
-    start_trial()  # Start the first trial automatically
+    #start_trial()  # Start the first trial automatically
     root.mainloop()
 
 if __name__ == "__main__":
