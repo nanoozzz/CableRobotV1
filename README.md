@@ -7,7 +7,8 @@ Rocker is controlled by 1 Servo motor **Dynamixel XL330-T288**\
 # Instruction:
 - upload Arduino code to the microcontroller (Arduino Due)
 - check Serial Port in Stretch.py and robot.py
+- run manual_calibrate.py to tension the cables
+- - for demo in training, run demoGUI.py
 - run main.py for main experiment
-- for demo in training, run demoGUI.py
 
 # Report and Presentation slides are available in /doc
