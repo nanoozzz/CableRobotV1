@@ -4,9 +4,10 @@ CDPR is controlled by 4 DC motors: **POLOLU-4846** + **VNH5019 Motor Driver Carr
 ECM is controlled by 2 Stepper motors **POLOLU-1208** + **A4988 Stepper Motor Driver Carrier** (not yet implemented)\
 Rocker is controlled by 1 Servo motor **Dynamixel XL330-T288**\
 
-# Instruction:\
+# Instruction:
 - upload Arduino code to the microcontroller (Arduino Due)
 - check Serial Port in Stretch.py and robot.py
-- run main.py
+- run main.py for main experiment
+- for demo in training, run demoGUI.py
 
-# Report and Presentation slides are available
+# Report and Presentation slides are available in /doc
