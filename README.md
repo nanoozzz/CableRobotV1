@@ -12,3 +12,5 @@ Rocker is controlled by 1 Servo motor **Dynamixel XL330-T288**\
 - run main.py for main experiment
 
 # Report and Presentation slides are available in /doc
+
+This project is subject to change
